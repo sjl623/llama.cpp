@@ -594,6 +594,40 @@ static void dequantize_row_iq1_s_cuda(const void * vx, dst_t * y, const int64_t 
 }
 
 template<typename dst_t>
+static __global__ void dequantize_block_stq1_0(const void * __restrict__ vx, dst_t * __restrict__ yy) {
+    const int64_t i   = blockIdx.x;
+    const block_stq1_0 * x = (const block_stq1_0  *) vx;
+
+    const int64_t tid = threadIdx.x;
+    const int64_t g   = tid * 2; // each thread handles 2 groups: g, g+1
+
+    const float d = __half2float(x[i].d);
+
+    for (int j = 0; j < 2; ++j) {
+        const int gg = g + j;
+        const int chunk = gg / 16;
+        const int gloc  = gg % 16;
+
+        const uint8_t code = (x[i].qs[gg/2] >> (4 * (gg & 1))) & 0x0F;
+        const uint8_t sign = (x[i].sign[gg/8] >> (gg % 8)) & 0x01;
+        const uint8_t qpack = stq1_0_codebook[((uint32_t) sign << 4) | code];
+
+        dst_t * y = yy + i*QK_K + chunk*64 + gloc;
+
+        y[0*16] = d * (float) (((int)(qpack >> 0) & 3) - 1);
+        y[1*16] = d * (float) (((int)(qpack >> 2) & 3) - 1);
+        y[2*16] = d * (float) (((int)(qpack >> 4) & 3) - 1);
+        y[3*16] = d * (float) (((int)(qpack >> 6) & 3) - 1);
+    }
+}
+
+template<typename dst_t>
+static void dequantize_row_stq1_0_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
+    const int nb = k / QK_K;
+    dequantize_block_stq1_0<<<nb, 32, 0, stream>>>(vx, y);
+}
+
+template<typename dst_t>
 static void dequantize_row_iq4_nl_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = (k + QK_K - 1) / QK_K;
     dequantize_block_iq4_nl<<<nb, 32, 0, stream>>>(vx, y);
@@ -746,6 +780,8 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
             return dequantize_row_iq3_xxs_cuda;
         case GGML_TYPE_IQ1_S:
             return dequantize_row_iq1_s_cuda;
+        case GGML_TYPE_STQ1_0:
+            return dequantize_row_stq1_0_cuda;
         case GGML_TYPE_IQ1_M:
             return dequantize_row_iq1_m_cuda;
         case GGML_TYPE_IQ4_NL:
@@ -762,6 +798,8 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
             return convert_unary_cont_cuda<float>;
         case GGML_TYPE_BF16:
             return convert_unary_cont_cuda<nv_bfloat16>;
+        case GGML_TYPE_F16:
+            return convert_unary_cont_cuda<half>;
         default:
             return nullptr;
     }
@@ -801,6 +839,8 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
             return dequantize_row_iq3_xxs_cuda;
         case GGML_TYPE_IQ1_S:
             return dequantize_row_iq1_s_cuda;
+        case GGML_TYPE_STQ1_0:
+            return dequantize_row_stq1_0_cuda;
         case GGML_TYPE_IQ1_M:
             return dequantize_row_iq1_m_cuda;
         case GGML_TYPE_IQ4_NL:
