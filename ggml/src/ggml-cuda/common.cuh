@@ -1085,6 +1085,13 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ1_S> {
 };
 
 template<>
+struct ggml_cuda_type_traits<GGML_TYPE_STQ1_0> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR_STQ1_0;
+    static constexpr int qi = QI_STQ1_0;
+};
+
+template<>
 struct ggml_cuda_type_traits<GGML_TYPE_IQ1_M> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR1_M;

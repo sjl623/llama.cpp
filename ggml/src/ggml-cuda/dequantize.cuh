@@ -97,3 +97,26 @@ static __device__ __forceinline__ void dequantize_q8_0(const void * vx, const in
     v.x *= d;
     v.y *= d;
 }
+
+static __device__ __forceinline__ void dequantize_stq1_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
+    const block_stq1_0 * x = (const block_stq1_0 *) vx;
+    const float d = __half2float(x[ib].d);
+
+    int t[2];
+#pragma unroll
+    for (int k = 0; k < 2; ++k) {
+        const int pos   = iqs + k;
+        const int chunk = pos / 64;
+        const int gloc  = pos % 16;
+        const int p     = (pos % 64) / 16;
+        const int g     = chunk * 16 + gloc;
+
+        const uint8_t code = (x[ib].qs[g/2] >> (4 * (g & 1))) & 0x0F;
+        const uint8_t sign = (x[ib].sign[g/8] >> (g % 8)) & 0x01;
+        const uint8_t qpack = stq1_0_codebook[((uint32_t) sign << 4) | code];
+        t[k] = ((int) (qpack >> (2*p)) & 3) - 1;
+    }
+
+    v.x = d * (float) t[0];
+    v.y = d * (float) t[1];
+}

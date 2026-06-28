@@ -2504,6 +2504,10 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
     ggml_tensor *       src1 = tensor->src[1];
     const ggml_tensor * dst  = tensor;
 
+    if (src0->type == GGML_TYPE_STQ1_0) {
+        return false;
+    }
+
     const bool bad_padding_clear = ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
                                    ggml_nbytes(src0) != ggml_backend_buffer_get_alloc_size(src0->buffer, src0) &&
                                    src0->view_src;
@@ -2602,6 +2606,13 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     const int32_t hint = ggml_get_op_params_i32(dst, 1);
     if (hint == GGML_HINT_SRC0_IS_HADAMARD && !split && ggml_cuda_op_fwht(ctx, src1, dst)) {
         return;
+    }
+
+    // STQ1_0: Q8_K-trained, incompatible with Q8_1 quantized matmul.
+    // Skip mmvq/mmq, dequant to float and use cuBLAS (all on GPU).
+    if (src0->type == GGML_TYPE_STQ1_0) {
+        use_mul_mat_vec_q = false;
+        use_mul_mat_q     = false;
     }
 
     if (!split && use_mul_mat_vec_f) {
@@ -5168,6 +5179,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                     case GGML_TYPE_Q8_K:
                     case GGML_TYPE_IQ1_M:
                     case GGML_TYPE_IQ1_S:
+                    case GGML_TYPE_STQ1_0:
                     case GGML_TYPE_IQ2_S:
                     case GGML_TYPE_IQ2_XS:
                     case GGML_TYPE_IQ2_XXS:
@@ -5196,6 +5208,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                     case GGML_TYPE_Q5_0:
                     case GGML_TYPE_Q5_1:
                     case GGML_TYPE_Q8_0:
+                    case GGML_TYPE_STQ1_0:
                         return true;
                     default:
                         return false;
