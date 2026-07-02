@@ -2608,10 +2608,8 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         return;
     }
 
-    // STQ1_0: Q8_K-trained, incompatible with Q8_1 quantized matmul.
-    // Skip mmvq/mmq, dequant to float and use cuBLAS (all on GPU).
+    // STQ1_0 has an MMVQ path but no MMQ tile loader yet.
     if (src0->type == GGML_TYPE_STQ1_0) {
-        use_mul_mat_vec_q = false;
         use_mul_mat_q     = false;
     }
 

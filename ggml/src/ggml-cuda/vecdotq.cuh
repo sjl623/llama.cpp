@@ -1217,6 +1217,46 @@ static __device__ __forceinline__ float vec_dot_iq1_s_q8_1(
     return d1q * (ds.x*sumi + ds.y*delta);
 }
 
+#define VDR_STQ1_0_Q8_1_MMVQ 1
+
+static __device__ __forceinline__ int stq1_0_pack_4(const block_stq1_0 * bq1, const int g, const int p) {
+    int v = 0;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        const int gg = g + i;
+        const uint8_t code = (bq1->qs[gg/2] >> (4 * (gg & 1))) & 0x0F;
+        const uint8_t sign = (bq1->sign[gg/8] >> (gg % 8)) & 0x01;
+        const uint8_t qpack = stq1_0_codebook[((uint32_t) sign << 4) | code];
+        const int8_t q = (int8_t) (((qpack >> (2*p)) & 0x03) - 1);
+        v |= ((int) (uint8_t) q) << (8*i);
+    }
+    return v;
+}
+
+static __device__ __forceinline__ float vec_dot_stq1_0_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+
+    const block_stq1_0 * bq1 = (const block_stq1_0 *) vbq + kbx;
+    const block_q8_1 * bq8 = bq8_1 + iqs;
+
+    const int chunk = iqs / 2;
+    const int p0 = 2 * (iqs & 1);
+    const int g0 = 16 * chunk;
+
+    int sumi = 0;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        const int g = g0 + 4*i;
+        const int v0 = stq1_0_pack_4(bq1, g, p0 + 0);
+        const int v1 = stq1_0_pack_4(bq1, g, p0 + 1);
+
+        sumi = ggml_cuda_dp4a(v0, get_int_b4(bq8->qs, i + 0), sumi);
+        sumi = ggml_cuda_dp4a(v1, get_int_b4(bq8->qs, i + 4), sumi);
+    }
+
+    return __half2float(bq1->d) * __low2float(bq8->ds) * sumi;
+}
+
 #define VDR_IQ1_M_Q8_1_MMVQ 1
 #define VDR_IQ1_M_Q8_1_MMQ  1
 
